@@ -94,7 +94,18 @@ function el(tag, attrs, children) {
 }
 
 function setBrand(color) {
-  if (color) document.documentElement.style.setProperty("--brand", color);
+  if (!color) return;
+  const root = document.documentElement;
+  root.style.setProperty("--brand", color);
+
+  /* درجة فاتحة مشتقّة من لون الهوية، حتى تبقى الخلفيات متناسقة مع أي لون يختاره الإداري */
+  const m = /^#?([0-9a-f]{6})$/i.exec(color.trim());
+  if (!m) return;
+  const n = parseInt(m[1], 16);
+  const mix = c => Math.round(c * 0.13 + 255 * 0.87);
+  const soft = [mix((n >> 16) & 255), mix((n >> 8) & 255), mix(n & 255)]
+    .map(c => c.toString(16).padStart(2, "0")).join("");
+  root.style.setProperty("--brand-soft", "#" + soft);
 }
 
 function toast(msg, kind) {
