@@ -195,7 +195,8 @@ async function viewMatch(box) {
     ]),
     el("a", { class: "btn ghost sm", target: "_blank", rel: "noopener",
       href: "https://wa.me/?text=" + encodeURIComponent(d.title + " — صوّت لأفضل لاعب:\n" + link),
-      text: "مشاركة عبر واتساب" })
+      text: "مشاركة عبر واتساب" }),
+    qrBox(link, d)
   ]));
 
   if (d.state === "not_started") nomineePicker(box, d);
@@ -221,6 +222,69 @@ async function viewMatch(box) {
       }}));
   }
   box.appendChild(danger);
+}
+
+/* ===== رمز QR لرابط المباراة ===== */
+function qrBox(link, d) {
+  const wrap = el("div", { class: "qrbox" });
+  let svg;
+  try {
+    svg = QR.toSVG(link);
+  } catch (e) {
+    return null;                                  /* لا يظهر شيء إن تعذّر التوليد */
+  }
+  wrap.innerHTML = svg;
+  wrap.firstChild.addEventListener("click", () => qrFullscreen(link, d.title));
+  wrap.appendChild(el("p", { class: "muted", style: "font-size:13px;margin:0 0 8px",
+    text: "وجّه الكاميرا على الرمز للدخول للتصويت" }));
+  wrap.appendChild(el("div", { class: "row", style: "justify-content:center" }, [
+    el("button", { class: "btn ghost sm", text: "تكبير للعرض",
+      onclick: () => qrFullscreen(link, d.title) }),
+    el("button", { class: "btn ghost sm", text: "حفظ صورة",
+      onclick: () => qrDownload(link, d.code) })
+  ]));
+  return wrap;
+}
+
+function qrFullscreen(link, title) {
+  const ov = el("div", { class: "qrfull" });
+  const inner = el("div", { class: "center" });
+  inner.innerHTML = QR.toSVG(link, { quiet: 2 });
+  inner.appendChild(el("p", { style: "font-size:20px;font-weight:700;margin:14px 0 4px",
+                              text: title }));
+  inner.appendChild(el("p", { class: "muted", style: "font-size:14px;margin:0",
+                              text: "صوّت لأفضل لاعب · المس الشاشة للإغلاق" }));
+  ov.appendChild(inner);
+  ov.addEventListener("click", () => ov.remove());
+  document.body.appendChild(ov);
+}
+
+function qrDownload(link, code) {
+  const blob = new Blob([QR.toSVG(link, { px: 1000 })], { type: "image/svg+xml;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const img = new Image();
+  img.onload = function () {
+    const S = 1000;
+    const cv = document.createElement("canvas");
+    cv.width = cv.height = S;
+    const cx = cv.getContext("2d");
+    cx.fillStyle = "#fff";
+    cx.fillRect(0, 0, S, S);
+    cx.drawImage(img, 0, 0, S, S);
+    URL.revokeObjectURL(url);
+    cv.toBlob(function (b) {
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(b);
+      a.download = "qr-" + code + ".png";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 3000);
+      toast("حُفظت صورة الرمز");
+    }, "image/png");
+  };
+  img.onerror = function () { URL.revokeObjectURL(url); toast("تعذّر حفظ الصورة", "bad"); };
+  img.src = url;
 }
 
 /* اختيار المرشّحين */
