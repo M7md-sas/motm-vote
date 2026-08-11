@@ -1,8 +1,32 @@
 /* لوحة الإدارة — رابط سري واحد للبطولة كلها */
 
 const app = document.getElementById("app");
-let KEY = null, CFGS = null, TEAMS = [], tab = "matches", openMatch = null;
+let KEY = null, CFGS = null, TEAMS = [], tab = "matches", openMatch = null, openTeamId = null;
 let refresher = null, clockTimer = null;
+
+/* ===== تتبّع خطوات التنقّل حتى يرجع زر الرجوع خطوة واحدة فقط ===== */
+function snapshot() {
+  return { tab: tab, openMatch: openMatch, openTeam: openTeamId };
+}
+
+function navTo(next, replace) {
+  if ("tab" in next)       tab = next.tab;
+  if ("openMatch" in next) openMatch = next.openMatch;
+  if ("openTeam" in next)  openTeamId = next.openTeam;
+  const st = snapshot();
+  if (replace) history.replaceState(st, ""); else history.pushState(st, "");
+  render();
+}
+
+window.addEventListener("popstate", function (e) {
+  const ov = document.querySelector(".qrfull");
+  if (ov) { ov.remove(); return; }          /* الرجوع يقفل العرض المكبّر أولاً */
+  const s = e.state || { tab: "matches", openMatch: null, openTeam: null };
+  tab        = s.tab || "matches";
+  openMatch  = s.openMatch || null;
+  openTeamId = s.openTeam || null;
+  render();
+});
 
 const STATE_LABEL = {
   not_started: ["لم يبدأ", "grey"],
@@ -19,7 +43,8 @@ function stopRefresh() {
   if (clockTimer) { clearInterval(clockTimer); clockTimer = null; }
 }
 
-async function call(fn, args) {
+/* quiet = أعِد الرد كما هو حتى لو كان فيه خطأ، ليتصرّف المستدعي بنفسه */
+async function call(fn, args, quiet) {
   let r;
   try {
     r = await rpc(fn, Object.assign({ p_key: KEY }, args || {}));
@@ -30,10 +55,14 @@ async function call(fn, args) {
       askKey("المفتاح لم يعد صالحاً.");
       return null;
     }
+    if (e.status === 404) {                 /* دالة غير موجودة في قاعدة البيانات */
+      toast("هذه الميزة تحتاج تحديث قاعدة البيانات — راجع ملف التحديث", "bad");
+      return null;
+    }
     toast("تعذّر الاتصال بالخادم. تحقّق من الإنترنت.", "bad");
     return null;
   }
-  if (r && r.ok === false && r.error) { toast(r.error, "bad"); return null; }
+  if (!quiet && r && r.ok === false && r.error) { toast(r.error, "bad"); return null; }
   return r;
 }
 
@@ -49,7 +78,7 @@ async function boot() {
     try { localStorage.setItem("motm_admin_key", KEY); } catch (e) { /* تجاهل */ }
     setBrand(CFGS.brand_color);
     document.getElementById("tname").textContent = CFGS.tournament_name;
-    render();
+    navTo({}, true);
   } catch (e) {
     try { localStorage.removeItem("motm_admin_key"); } catch (e2) { /* تجاهل */ }
     askKey(e.status === 403 || e.status === 400 ? "المفتاح غير صحيح." : "تعذّر الاتصال بالخادم.");
@@ -84,7 +113,7 @@ function render() {
     .forEach(([id, label]) => {
       tabs.appendChild(el("button", {
         class: tab === id ? "on" : "", text: label,
-        onclick: () => { tab = id; openMatch = null; render(); }
+        onclick: () => navTo({ tab: id, openMatch: null, openTeam: null })
       }));
     });
   app.appendChild(tabs);
@@ -134,7 +163,7 @@ async function viewMatches(box) {
             if (!home.value || !away.value) return toast("اختر الفريقين", "bad");
             const r = await call("admin_create_match", {
               p_home: home.value, p_away: away.value, p_date: date.value, p_title: null });
-            if (r && r.ok) { openMatch = r.id; toast("أُنشئت المباراة"); render(); }
+            if (r && r.ok) { toast("أُنشئت المباراة"); navTo({ openMatch: r.id }); }
           }})
         ])
   ]));
@@ -155,7 +184,7 @@ async function viewMatches(box) {
       ]),
       el("span", { class: "badge " + cls, text: label }),
       el("button", { class: "icon", text: "‹", title: "فتح",
-                     onclick: () => { openMatch = m.id; render(); } })
+                     onclick: () => navTo({ openMatch: m.id }) })
     ]));
   });
   card.appendChild(el("button", {
@@ -169,12 +198,12 @@ async function viewMatches(box) {
 async function viewMatch(box) {
   loading(box);
   const d = await call("admin_match_detail", { p_match_id: openMatch });
-  if (!d) { openMatch = null; return render(); }
+  if (!d) return navTo({ openMatch: null }, true);
   box.innerHTML = "";
   const [label, cls] = STATE_LABEL[d.state] || ["—", "grey"];
 
   box.appendChild(el("button", { class: "btn ghost sm", text: "› رجوع للقائمة",
-    onclick: () => { openMatch = null; render(); } }));
+    onclick: () => history.back() }));
 
   /* الترويسة والرابط */
   const link = linkFor(d.code);
@@ -212,15 +241,19 @@ async function viewMatch(box) {
         if (await call("admin_cancel_match", { p_match_id: d.id })) { toast("أُلغيت"); render(); }
       }}));
   }
-  if (d.total_votes === 0) {
-    danger.appendChild(el("button", { class: "btn ghost sm", text: "حذف المباراة",
-      onclick: async () => {
-        if (!confirm("حذف المباراة نهائياً؟")) return;
-        if (await call("admin_delete_match", { p_match_id: d.id })) {
-          toast("حُذفت"); openMatch = null; render();
-        }
-      }}));
-  }
+  danger.appendChild(el("button", {
+    class: d.total_votes ? "btn danger sm" : "btn ghost sm",
+    text: d.total_votes ? "حذف المباراة بأصواتها" : "حذف المباراة",
+    onclick: async () => {
+      const msg = d.total_votes
+        ? "حذف المباراة نهائياً مع " + arNum(d.total_votes) + " صوتاً مسجّلاً؟\nلا يمكن التراجع."
+        : "حذف المباراة نهائياً؟";
+      if (!confirm(msg)) return;
+      if (d.total_votes && !confirm("تأكيد أخير: ستختفي النتيجة من رابط المباراة نهائياً.")) return;
+      const r = await call("admin_delete_match", { p_match_id: d.id, p_force: true });
+      if (r && r.ok) { toast("حُذفت المباراة"); navTo({ openMatch: null }, true); }
+    }
+  }));
   box.appendChild(danger);
 }
 
@@ -255,8 +288,10 @@ function qrFullscreen(link, title) {
   inner.appendChild(el("p", { class: "muted", style: "font-size:14px;margin:0",
                               text: "صوّت لأفضل لاعب · المس الشاشة للإغلاق" }));
   ov.appendChild(inner);
-  ov.addEventListener("click", () => ov.remove());
+  ov.addEventListener("click", () => history.back());
   document.body.appendChild(ov);
+  /* خطوة تنقّل مستقلة: زر الرجوع يقفل العرض المكبّر ولا يخرج من المباراة */
+  history.pushState(Object.assign(snapshot(), { qr: true }), "");
 }
 
 function qrDownload(link, code) {
@@ -467,14 +502,54 @@ function resultPanel(box, d) {
 }
 
 /* ============ الفرق واللاعبون ============ */
-let openTeam = null;
+async function deleteTeam(t) {
+  if (!confirm("حذف «" + t.name + "» و" + arNum(t.players) + " لاعباً؟")) return;
+
+  let r = await call("admin_delete_team", { p_id: t.id, p_force: false }, true);
+  if (!r) return;
+
+  if (r.ok === false && r.needs_force) {
+    if (!confirm("الفريق مرتبط بـ " + arNum(r.matches) + " مباراة.\n" +
+                 "الحذف يمسح تلك المباريات وأصواتها نهائياً. أتابع؟")) return;
+    r = await call("admin_delete_team", { p_id: t.id, p_force: true }, true);
+    if (!r) return;
+  }
+
+  if (r.ok) {
+    toast("حُذف الفريق" + (r.deleted_matches ? " و" + arNum(r.deleted_matches) + " مباراة" : ""));
+    TEAMS = [];
+    if (openTeamId === t.id) return navTo({ openTeam: null }, true);
+    render();
+  } else if (r.error) toast(r.error, "bad");
+}
+
+async function deletePlayer(p) {
+  if (!confirm("حذف «" + p.name + "»؟")) return;
+
+  let r = await call("admin_delete_player", { p_id: p.id, p_force: false }, true);
+  if (!r) return;
+
+  if (r.ok && r.archived) {
+    if (confirm(r.note + "\n\nتبي تحذفه نهائياً مع سجل ترشيحاته؟")) {
+      r = await call("admin_delete_player", { p_id: p.id, p_force: true }, true);
+      if (!r) return;
+    }
+  }
+
+  if (r.ok) { toast(r.archived ? "أُخفي اللاعب" : "حُذف اللاعب"); TEAMS = []; render(); }
+  else if (r.error) toast(r.error, "bad");
+}
 
 async function viewTeams(box) {
   loading(box);
   TEAMS = await call("admin_teams") || [];
   box.innerHTML = "";
 
-  if (openTeam) return viewSquad(box, openTeam);
+  if (openTeamId) {
+    const t = TEAMS.filter(x => x.id === openTeamId)[0];
+    if (t) return viewSquad(box, t);
+    openTeamId = null;                          /* الفريق حُذف من جهاز آخر */
+  }
 
   const name = el("input", { type: "text", placeholder: "اسم الفريق" });
   box.appendChild(el("div", { class: "card" }, [
@@ -501,12 +576,9 @@ async function viewTeams(box) {
         if (!v || !v.trim()) return;
         if (await call("admin_save_team", { p_id: t.id, p_name: v.trim() })) { toast("حُفظ"); render(); }
       }}),
-      el("button", { class: "icon", text: "🗑", title: "حذف", onclick: async () => {
-        if (!confirm("حذف «" + t.name + "» بكل لاعبيه؟")) return;
-        if (await call("admin_delete_team", { p_id: t.id })) { toast("حُذف"); render(); }
-      }}),
+      el("button", { class: "icon", text: "🗑", title: "حذف", onclick: () => deleteTeam(t) }),
       el("button", { class: "icon", text: "‹", title: "اللاعبون",
-                     onclick: () => { openTeam = t; render(); } })
+                     onclick: () => navTo({ openTeam: t.id }) })
     ]));
   });
   box.appendChild(card);
@@ -516,7 +588,7 @@ async function viewSquad(box, team) {
   const players = await call("admin_players", { p_team_id: team.id }) || [];
   box.innerHTML = "";
   box.appendChild(el("button", { class: "btn ghost sm", text: "› رجوع للفرق",
-    onclick: () => { openTeam = null; render(); } }));
+    onclick: () => history.back() }));
 
   const pname = el("input", { type: "text", placeholder: "اسم اللاعب" });
   const pnum = el("input", { type: "number", min: "0", max: "999", placeholder: "الرقم (اختياري)" });
@@ -573,11 +645,7 @@ async function viewSquad(box, team) {
           p_number: nu && nu.trim() ? parseInt(nu.trim(), 10) : null,
           p_active: p.is_active })) { toast("حُفظ"); render(); }
       }}),
-      el("button", { class: "icon", text: "🗑", onclick: async () => {
-        if (!confirm("حذف «" + p.name + "»؟")) return;
-        const r = await call("admin_delete_player", { p_id: p.id });
-        if (r && r.ok) { toast(r.note || "حُذف"); render(); }
-      }})
+      el("button", { class: "icon", text: "🗑", onclick: () => deletePlayer(p) })
     ]));
   });
   box.appendChild(card);
@@ -622,13 +690,27 @@ async function viewArchive(box) {
                            (r.tie_pending ? " · تعادل لم يُحسم" : "") })
       ]),
       el("button", { class: "icon", text: "‹", title: "فتح",
-                     onclick: () => { tab = "matches"; openMatch = m.id; render(); } })
+                     onclick: () => navTo({ tab: "matches", openMatch: m.id }) })
     ]));
   });
   box.appendChild(ms);
 }
 
 /* ============ الإعدادات ============ */
+async function doReset(scope, what) {
+  if (!confirm("سيُحذف نهائياً:\n" + what + "\n\nأتابع؟")) return;
+  const typed = prompt("للتأكيد اكتب كلمة:  احذف");
+  if (!typed || typed.trim() !== "احذف") return toast("أُلغي المسح", "bad");
+
+  const r = await call("admin_reset", { p_scope: scope, p_confirm: typed.trim() });
+  if (!r || !r.ok) return;
+
+  toast("مُسح " + arNum(r.matches) + " مباراة و" + arNum(r.votes) + " صوتاً" +
+        (scope === "all" ? " و" + arNum(r.teams) + " فريقاً" : ""));
+  TEAMS = [];
+  navTo({ tab: "matches", openMatch: null, openTeam: null });
+}
+
 function viewSettings(box) {
   box.innerHTML = "";
   const name  = el("input", { type: "text",  value: CFGS.tournament_name });
@@ -686,6 +768,16 @@ function viewSettings(box) {
         history.replaceState({}, "", "admin.html?k=" + encodeURIComponent(v));
       }
     }})
+  ]));
+
+  box.appendChild(el("div", { class: "card" }, [
+    el("h2", { text: "تجهيز الرابط لدورة جديدة" }),
+    el("p", { class: "muted", text: "مسح نهائي بلا رجعة. روابط المباريات الممسوحة تصير غير صالحة، ولن تُعرض نتائجها لأحد بعدها." }),
+    el("button", { class: "btn ghost", text: "امسح المباريات والأصوات فقط",
+      onclick: () => doReset("matches", "كل المباريات وأصواتها، مع بقاء الفرق واللاعبين") }),
+    el("div", { style: "height:8px" }),
+    el("button", { class: "btn danger", text: "امسح كل شيء — فرق ولاعبين ومباريات",
+      onclick: () => doReset("all", "كل الفرق واللاعبين والمباريات والأصوات") })
   ]));
 
   box.appendChild(el("div", { class: "card" }, [
