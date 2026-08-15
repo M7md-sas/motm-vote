@@ -395,7 +395,10 @@ function nomineePicker(box, d) {
   }
 
   d.squads.forEach(sq => {
-    card.appendChild(el("h3", { style: "font-size:15px;margin:14px 0 8px", text: sq.team }));
+    const head = el("div", { style: "display:flex;align-items:center;gap:8px;margin:14px 0 8px" });
+    head.appendChild(kitSVG(null, sq.kit_color, sq.number_color, 24));
+    head.appendChild(el("h3", { style: "font-size:15px;margin:0", text: sq.team }));
+    card.appendChild(head);
     const wrap = el("div");
     sq.players.forEach(p => wrap.appendChild(makeChip(sq, p)));
 
@@ -472,13 +475,16 @@ function livePanel(box, d) {
     const t = data.total_votes || 0;
     data.nominees.forEach(n => {
       const pct = t ? Math.round(n.votes * 1000 / t) / 10 : 0;
-      rows.appendChild(el("div", { class: "res" }, [
+      const row = el("div", { class: "res", style: "display:flex;align-items:center;gap:10px" });
+      row.appendChild(kitSVG(n.shirt_number, n.kit_color, n.number_color, 40));
+      row.appendChild(el("div", { style: "flex:1;min-width:0" }, [
         el("div", { class: "line" }, [
           el("b", { text: n.name }),
           el("span", { class: "pct", text: arNum(n.votes) + " (" + arNum(pct) + "٪)" })
         ]),
         el("div", { class: "bar" }, [ el("i", { style: "width:" + pct + "%" }) ])
       ]));
+      rows.appendChild(row);
     });
   };
   paint(d);
@@ -620,7 +626,10 @@ function resultPanel(box, d) {
 
   r.nominees.forEach(n => {
     const win = winners.indexOf(n.player_id) !== -1;
-    card.appendChild(el("div", { class: "res" + (win ? " win" : "") }, [
+    const row = el("div", { class: "res" + (win ? " win" : ""),
+                            style: "display:flex;align-items:center;gap:10px" });
+    row.appendChild(kitSVG(n.shirt_number, n.kit_color, n.number_color, 40));
+    row.appendChild(el("div", { style: "flex:1;min-width:0" }, [
       el("div", { class: "line" }, [
         el("b", { text: n.name }),
         el("span", { class: "pct", text: arNum(n.percent) + "٪" })
@@ -628,6 +637,7 @@ function resultPanel(box, d) {
       el("div", { class: "bar" }, [ el("i", { style: "width:" + n.percent + "%" }) ]),
       el("div", { class: "muted", style: "font-size:13px", text: arNum(n.votes) + " صوت" })
     ]));
+    card.appendChild(row);
   });
   card.appendChild(el("p", { class: "muted center",
     text: "إجمالي المصوّتين: " + arNum(r.total_voters) }));
@@ -652,6 +662,71 @@ function resultPanel(box, d) {
 
   card.appendChild(shareButton(d));
   box.appendChild(card);
+}
+
+/* ============ ألوان الفرق ============ */
+const KITS = [
+  ["#D32F2F", "أحمر"],   ["#7B1E3A", "عنابي"],  ["#EF6C00", "برتقالي"], ["#C9A227", "ذهبي"],
+  ["#FBC02D", "أصفر"],   ["#2E7D32", "أخضر"],   ["#00897B", "تركوازي"], ["#29B6F6", "سماوي"],
+  ["#1565C0", "أزرق"],   ["#14213D", "كحلي"],   ["#6A1B9A", "بنفسجي"],  ["#E91E63", "وردي"],
+  ["#5D4037", "بني"],    ["#111111", "أسود"],   ["#9E9E9E", "رمادي"],   ["#FFFFFF", "أبيض"]
+];
+
+/* لوحة الاختيار: اللون المأخوذ لفريق آخر يظهر معطّلاً باسم صاحبه */
+function kitPalette(current, forcedInk, takenBy, onPick) {
+  const wrap = el("div");
+  const state = { kit: current || null, ink: forcedInk || null };
+
+  const grid = el("div", { style: "display:grid;grid-template-columns:repeat(8,1fr);gap:8px" });
+  KITS.forEach(([hex, name]) => {
+    const owner = takenBy[hex.toLowerCase()];
+    const cell = el("button", {
+      type: "button", title: owner ? name + " — مأخوذ لفريق " + owner : name,
+      style: "aspect-ratio:1;border-radius:10px;cursor:pointer;padding:0;background:" + hex +
+             ";border:" + (hex === "#FFFFFF" ? "1px solid #b4b2a9" : "1px solid #00000022") +
+             (owner ? ";opacity:.28;cursor:not-allowed" : ""),
+      onclick: () => {
+        if (owner) return toast("هذا اللون مأخوذ لفريق " + owner, "bad");
+        state.kit = hex;
+        paint();
+        onPick(state);
+      }
+    });
+    cell._hex = hex;
+    grid.appendChild(cell);
+  });
+  wrap.appendChild(grid);
+
+  const inkRow = el("div", { style: "display:flex;align-items:center;gap:8px;margin-top:12px;flex-wrap:wrap" });
+  inkRow.appendChild(el("span", { class: "muted", style: "font-size:14px", text: "لون الرقم" }));
+  const inkBtns = {};
+  [[null, "تلقائي"], ["white", "أبيض"], ["black", "أسود"]].forEach(([v, label]) => {
+    const b = el("button", { class: "chip", type: "button", text: label, style: "margin:0",
+      onclick: () => { state.ink = v; paint(); onPick(state); } });
+    inkBtns[String(v)] = b;
+    inkRow.appendChild(b);
+  });
+  wrap.appendChild(inkRow);
+
+  const preview = el("div", { style: "display:flex;align-items:center;gap:12px;margin-top:14px" });
+  wrap.appendChild(preview);
+
+  function paint() {
+    Array.prototype.forEach.call(grid.children, c => {
+      c.style.boxShadow = (state.kit && c._hex === state.kit)
+        ? "0 0 0 3px var(--card), 0 0 0 5px var(--brand)" : "none";
+    });
+    Object.keys(inkBtns).forEach(k => {
+      if (k === String(state.ink)) inkBtns[k].classList.add("on");
+      else inkBtns[k].classList.remove("on");
+    });
+    preview.innerHTML = "";
+    preview.appendChild(kitSVG(9, state.kit, state.ink, 52));
+    preview.appendChild(el("span", { class: "muted", style: "font-size:14px",
+      text: state.kit ? "هكذا يظهر لاعبو الفريق" : "اختر لوناً" }));
+  }
+  paint();
+  return wrap;
 }
 
 /* ============ الفرق واللاعبون ============ */
@@ -704,13 +779,28 @@ async function viewTeams(box) {
     openTeamId = null;                          /* الفريق حُذف من جهاز آخر */
   }
 
+  /* الألوان المحجوزة لبقية الفرق */
+  const takenBy = (exceptId) => {
+    const map = {};
+    TEAMS.forEach(t => {
+      if (t.kit_color && t.id !== exceptId) map[t.kit_color.toLowerCase()] = t.name;
+    });
+    return map;
+  };
+
   const name = el("input", { type: "text", placeholder: "اسم الفريق" });
+  const picked = { kit: null, ink: null };
   box.appendChild(el("div", { class: "card" }, [
     el("h2", { text: "إضافة فريق" }),
-    name, el("div", { style: "height:12px" }),
+    name,
+    el("label", { text: "لون الفانلة" }),
+    kitPalette(null, null, takenBy(null), s => { picked.kit = s.kit; picked.ink = s.ink; }),
+    el("div", { style: "height:14px" }),
     el("button", { class: "btn", text: "أضف الفريق", onclick: async () => {
       if (!name.value.trim()) return toast("اكتب اسم الفريق", "bad");
-      if (await call("admin_save_team", { p_id: null, p_name: name.value.trim() })) {
+      if (!picked.kit) return toast("اختر لون الفانلة", "bad");
+      if (await call("admin_save_team", { p_id: null, p_name: name.value.trim(),
+                                          p_kit_color: picked.kit, p_number_color: picked.ink })) {
         toast("أُضيف الفريق"); render();
       }
     }})
@@ -719,22 +809,47 @@ async function viewTeams(box) {
   const card = el("div", { class: "card" }, [ el("h2", { text: "الفرق المسجّلة" }) ]);
   if (!TEAMS.length) card.appendChild(el("p", { class: "muted", text: "لا توجد فرق بعد." }));
   TEAMS.forEach(t => {
-    card.appendChild(el("div", { class: "item" }, [
-      el("div", { class: "grow" }, [
-        el("b", { text: t.name }),
-        el("span", { text: arNum(t.players) + " لاعباً" })
-      ]),
-      el("button", { class: "icon", text: "✎", title: "تعديل الاسم", onclick: async () => {
-        const v = prompt("اسم الفريق:", t.name);
-        if (!v || !v.trim()) return;
-        if (await call("admin_save_team", { p_id: t.id, p_name: v.trim() })) { toast("حُفظ"); render(); }
-      }}),
-      el("button", { class: "icon", text: "🗑", title: "حذف", onclick: () => deleteTeam(t) }),
-      el("button", { class: "icon", text: "‹", title: "اللاعبون",
-                     onclick: () => navTo({ openTeam: t.id }) })
+    const row = el("div", { class: "item" });
+    row.appendChild(kitSVG(null, t.kit_color, t.number_color, 30));
+    row.appendChild(el("div", { class: "grow" }, [
+      el("b", { text: t.name }),
+      el("span", { text: arNum(t.players) + " لاعباً" + (t.kit_color ? "" : " · بلا لون") })
     ]));
+    row.appendChild(el("button", { class: "icon", text: "✎", title: "تعديل",
+                                   onclick: () => editTeam(t, takenBy(t.id)) }));
+    row.appendChild(el("button", { class: "icon", text: "🗑", title: "حذف",
+                                   onclick: () => deleteTeam(t) }));
+    row.appendChild(el("button", { class: "icon", text: "‹", title: "اللاعبون",
+                                   onclick: () => navTo({ openTeam: t.id }) }));
+    card.appendChild(row);
   });
   box.appendChild(card);
+}
+
+/* تعديل اسم الفريق ولونه */
+function editTeam(t, taken) {
+  const ov = el("div", { class: "qrfull", style: "align-items:start;overflow:auto;padding:24px 16px" });
+  const name = el("input", { type: "text", value: t.name });
+  const picked = { kit: t.kit_color || null, ink: t.number_color || null };
+
+  const panel = el("div", { style: "width:min(92vw,520px);margin:0 auto" }, [
+    el("h2", { style: "margin:0 0 12px", text: "تعديل الفريق" }),
+    el("label", { text: "الاسم" }), name,
+    el("label", { text: "لون الفانلة" }),
+    kitPalette(picked.kit, picked.ink, taken, s => { picked.kit = s.kit; picked.ink = s.ink; }),
+    el("div", { style: "height:16px" }),
+    el("button", { class: "btn", text: "احفظ", onclick: async () => {
+      if (!name.value.trim()) return toast("اكتب اسم الفريق", "bad");
+      const r = await call("admin_save_team", { p_id: t.id, p_name: name.value.trim(),
+                                                p_kit_color: picked.kit, p_number_color: picked.ink });
+      if (r && r.ok) { ov.remove(); toast("حُفظ"); TEAMS = []; render(); }
+    }}),
+    el("div", { style: "height:8px" }),
+    el("button", { class: "btn ghost", text: "إلغاء", onclick: () => ov.remove() })
+  ]);
+
+  ov.appendChild(panel);
+  document.body.appendChild(ov);
 }
 
 async function viewSquad(box, team) {

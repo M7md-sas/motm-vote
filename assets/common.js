@@ -63,22 +63,78 @@ async function deviceSig() {
 }
 
 /* ---------- أدوات عرض ---------- */
-const AR = "٠١٢٣٤٥٦٧٨٩";
+/* الأرقام تُعرض بالصيغة العربية الأصلية 0123456789 لا الهندية ٠١٢٣٤٥٦٧٨٩ */
 function arNum(n) {
-  return String(n).replace(/[0-9]/g, d => AR[+d]);
+  return String(n);
 }
 
 function fmtDate(iso) {
   if (!iso) return "";
   const d = new Date(iso + (iso.length === 10 ? "T00:00:00" : ""));
-  return d.toLocaleDateString("ar-SA-u-ca-gregory",
+  return d.toLocaleDateString("ar-SA-u-ca-gregory-nu-latn",
     { day: "numeric", month: "long", year: "numeric" });
 }
 
 function fmtClock(sec) {
   if (sec < 0) sec = 0;
   const m = Math.floor(sec / 60), s = sec % 60;
-  return arNum(m) + ":" + arNum(String(s).padStart(2, "0"));
+  return m + ":" + String(s).padStart(2, "0");
+}
+
+/* ---------- فانلة اللاعب ---------- */
+const KIT_DEFAULT = "#9E9E9E";
+
+/* سطوع اللون حسب معيار WCAG */
+function luminance(hex) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(String(hex || KIT_DEFAULT).trim());
+  if (!m) return 0;
+  const v = parseInt(m[1], 16);
+  const lin = c => { c /= 255; return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
+  return 0.2126 * lin((v >> 16) & 255) + 0.7152 * lin((v >> 8) & 255) + 0.0722 * lin(v & 255);
+}
+
+/* رقم أبيض على الفانلات الغامقة وأسود على الفاتحة، ما لم يُفرَض لون يدوياً.
+   العتبة 0.179 هي نقطة تعادل التباين بين الأبيض والأسود. */
+function numberInk(kit, forced) {
+  if (forced === "white" || forced === "black") return forced === "white" ? "#ffffff" : "#111111";
+  return luminance(kit) > 0.179 ? "#111111" : "#ffffff";
+}
+
+/* svg فانلة بلون الفريق ورقم اللاعب مطبوع عليها */
+function kitSVG(number, kit, forcedInk, size) {
+  const fill = kit || KIT_DEFAULT;
+  const ink = numberInk(fill, forcedInk);
+  const has = number !== null && number !== undefined && number !== "";
+  const light = luminance(fill) > 0.6;   /* الفانلة شديدة الفتحة تحتاج إطاراً أظهر */
+  const px = size || 58;
+
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 48 48");
+  svg.setAttribute("width", px);
+  svg.setAttribute("height", px);
+  svg.setAttribute("aria-hidden", "true");
+  svg.style.flex = "none";
+
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path.setAttribute("d", "M17 6 L10 10 L7 18 L13 21 L13 42 L35 42 L35 21 L41 18 L38 10 L31 6 C31 11 17 11 17 6 Z");
+  path.setAttribute("fill", fill);
+  path.setAttribute("stroke", light ? "#9aa0a6" : "#00000026");
+  path.setAttribute("stroke-width", light ? "2" : "1.5");
+  svg.appendChild(path);
+
+  if (has) {
+    const t = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    t.setAttribute("x", "24");
+    t.setAttribute("y", "35");
+    t.setAttribute("text-anchor", "middle");
+    t.setAttribute("font-size", String(number).length > 2 ? "14" : "18");
+    t.setAttribute("font-weight", "700");
+    t.setAttribute("fill", ink);
+    t.setAttribute("font-family", "Segoe UI, Tahoma, system-ui, sans-serif");
+    t.textContent = String(number);
+    svg.appendChild(t);
+  }
+  return svg;
 }
 
 function el(tag, attrs, children) {

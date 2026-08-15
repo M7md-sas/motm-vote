@@ -78,18 +78,15 @@ function viewNotStarted() {
 }
 
 function nomineeButton(n, onPick) {
-  const num = n.shirt_number === null || n.shirt_number === undefined
-    ? el("div", { class: "num blank", text: "•" })
-    : el("div", { class: "num", text: arNum(n.shirt_number) });
-
-  return el("button", { class: "nominee", type: "button", "data-id": n.nominee_id, onclick: onPick }, [
-    num,
-    el("div", { class: "who" }, [
-      el("b", { text: n.name }),
-      el("span", { text: n.team })
-    ]),
-    el("div", { class: "tick", text: "✔" })
-  ]);
+  const btn = el("button", { class: "nominee", type: "button",
+                             "data-id": n.nominee_id, onclick: onPick });
+  btn.appendChild(kitSVG(n.shirt_number, n.kit_color, n.number_color, 58));
+  btn.appendChild(el("div", { class: "who" }, [
+    el("b", { text: n.name }),
+    el("span", { text: n.team })
+  ]));
+  btn.appendChild(el("div", { class: "tick", text: "✔" }));
+  return btn;
 }
 
 function viewOpen() {
@@ -177,16 +174,20 @@ function viewClosed() {
 
   r.nominees.forEach(n => {
     const win = winners.indexOf(n.player_id) !== -1;
-    card.appendChild(el("div", { class: "res" + (win ? " win" : "") }, [
+    const body = el("div", { style: "flex:1;min-width:0" }, [
       el("div", { class: "line" }, [
-        el("b", { text: n.name + (n.shirt_number !== null && n.shirt_number !== undefined
-                                  ? " · " + arNum(n.shirt_number) : "") }),
+        el("b", { text: n.name }),
         el("span", { class: "pct", text: arNum(n.percent) + "٪" })
       ]),
       el("div", { class: "bar" }, [ el("i", { style: "width:" + n.percent + "%" }) ]),
       el("div", { class: "muted", style: "font-size:13px",
                   text: n.team + " · " + arNum(n.votes) + " صوت" })
-    ]));
+    ]);
+    const row = el("div", { class: "res" + (win ? " win" : ""),
+                            style: "display:flex;align-items:center;gap:12px" });
+    row.appendChild(kitSVG(n.shirt_number, n.kit_color, n.number_color, 46));
+    row.appendChild(body);
+    card.appendChild(row);
   });
 
   card.appendChild(el("p", { class: "muted center",
