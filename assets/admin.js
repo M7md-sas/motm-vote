@@ -322,56 +322,119 @@ function qrDownload(link, code) {
   img.src = url;
 }
 
-/* اختيار المرشّحين */
+/* اختيار المرشّحين — الرقم يُحدَّد لكل مباراة على حدة لأنه يتغيّر بين المباريات */
 function nomineePicker(box, d) {
-  const chosen = new Set(d.nominees.map(n => n.player_id));
+  /* قائمة مرتّبة تحمل رقم كل مرشّح في هذه المباراة تحديداً */
+  const chosen = d.nominees.map(n => ({
+    id: n.player_id, name: n.name, team: n.team,
+    number: (n.shirt_number === null || n.shirt_number === undefined) ? "" : String(n.shirt_number)
+  }));
+  const at = id => chosen.map(c => c.id).indexOf(id);
+  const chips = {};
+  const picked = el("div");
+
   const card = el("div", { class: "card" }, [
     el("h2", { text: "اختر المرشّحين" }),
-    el("p", { class: "muted", text: "من ٢ إلى ٥ لاعبين. اضغط على اللاعب لاختياره." })
+    el("p", { class: "muted", text: "اضغط على اللاعب لاختياره، ثم حدّد رقم قميصه في هذه المباراة. الرقم اختياري." })
   ]);
+
+  function syncChips() {
+    Object.keys(chips).forEach(id => {
+      if (at(id) !== -1) chips[id].classList.add("on");
+      else chips[id].classList.remove("on");
+    });
+  }
+
+  function repaintPicked() {
+    picked.innerHTML = "";
+    picked.appendChild(el("h3", { style: "font-size:15px;margin:18px 0 8px",
+      text: chosen.length ? "المرشّحون وأرقامهم (" + arNum(chosen.length) + ")"
+                          : "المرشّحون وأرقامهم" }));
+
+    if (!chosen.length) {
+      picked.appendChild(el("p", { class: "muted", text: "لم تختر أحداً بعد." }));
+      return;
+    }
+
+    chosen.forEach((c, i) => {
+      const sel = el("select", { style: "width:110px;flex:none" });
+      sel.appendChild(el("option", { value: "", text: "بلا رقم" }));
+      for (let n = 1; n <= 99; n++) {
+        sel.appendChild(el("option", { value: String(n), text: arNum(n) }));
+      }
+      sel.value = c.number;
+      sel.addEventListener("change", () => { c.number = sel.value; });
+
+      picked.appendChild(el("div", { class: "item" }, [
+        el("div", { class: "grow" }, [
+          el("b", { text: arNum(i + 1) + ". " + c.name }),
+          el("span", { text: c.team })
+        ]),
+        sel,
+        el("button", { class: "icon", text: "✕", title: "إزالة", onclick: () => {
+          chosen.splice(i, 1); syncChips(); repaintPicked();
+        }})
+      ]));
+    });
+  }
+
+  function makeChip(sq, p) {
+    const chip = el("button", { class: "chip", type: "button", onclick: () => {
+      const i = at(p.id);
+      if (i !== -1) chosen.splice(i, 1);
+      else if (chosen.length >= 5) return toast("الحد الأقصى خمسة مرشّحين", "bad");
+      else chosen.push({ id: p.id, name: p.name, team: sq.team, number: "" });
+      syncChips(); repaintPicked();
+    }}, [
+      el("span", { text: p.name }),
+      el("span", { class: "n", text: p.shirt_number === null || p.shirt_number === undefined
+                                     ? "" : arNum(p.shirt_number) })
+    ]);
+    chips[p.id] = chip;
+    return chip;
+  }
 
   d.squads.forEach(sq => {
     card.appendChild(el("h3", { style: "font-size:15px;margin:14px 0 8px", text: sq.team }));
     const wrap = el("div");
-    sq.players.forEach(p => {
-      const chip = el("button", {
-        class: "chip" + (chosen.has(p.id) ? " on" : ""), type: "button",
-        onclick: () => {
-          if (chosen.has(p.id)) chosen.delete(p.id);
-          else if (chosen.size >= 5) return toast("الحد الأقصى خمسة مرشّحين", "bad");
-          else chosen.add(p.id);
-          chip.classList.toggle("on");
-          count.textContent = "المختارون: " + arNum(chosen.size);
-        }
-      }, [
-        el("span", { text: p.name }),
-        el("span", { class: "n", text: p.shirt_number === null || p.shirt_number === undefined
-                                       ? "" : arNum(p.shirt_number) })
-      ]);
-      wrap.appendChild(chip);
-    });
+    sq.players.forEach(p => wrap.appendChild(makeChip(sq, p)));
 
-    /* إضافة لاعب سريعة داخل نفس الشاشة */
-    wrap.appendChild(el("button", { class: "chip", type: "button", text: "＋ لاعب جديد",
+    /* إضافة لاعب سريعة — بلا رقم، لأن الرقم يُحدَّد أدناه لهذه المباراة */
+    const addBtn = el("button", { class: "chip", type: "button", text: "＋ لاعب جديد",
       onclick: async () => {
         const name = prompt("اسم اللاعب:");
         if (!name || !name.trim()) return;
-        const num = prompt("رقم القميص (اتركه فارغاً إن لم يوجد):");
         const r = await call("admin_save_player", {
           p_id: null, p_team_id: sq.team_id, p_name: name.trim(),
-          p_number: num && num.trim() ? parseInt(num.trim(), 10) : null, p_active: true });
-        if (r && r.ok) { toast("أُضيف اللاعب"); TEAMS = []; render(); }
-      }}));
+          p_number: null, p_active: true });
+        if (!r || !r.ok) return;
+
+        TEAMS = [];
+        const np = { id: r.id, name: name.trim(), shirt_number: null };
+        sq.players.push(np);
+        wrap.insertBefore(makeChip(sq, np), addBtn);   /* بلا إعادة بناء تفقد اختياراتك */
+        if (chosen.length < 5) chosen.push({ id: np.id, name: np.name, team: sq.team, number: "" });
+        syncChips(); repaintPicked();
+        toast("أُضيف اللاعب واختير");
+      }});
+    wrap.appendChild(addBtn);
     card.appendChild(wrap);
   });
 
-  const count = el("p", { class: "muted", text: "المختارون: " + arNum(chosen.size) });
-  card.appendChild(count);
-  card.appendChild(el("button", { class: "btn ghost", text: "احفظ المرشّحين", onclick: async () => {
-    if (chosen.size < 2) return toast("اختر مرشّحَين على الأقل", "bad");
-    if (await call("admin_set_nominees", {
-      p_match_id: d.id, p_player_ids: Array.from(chosen) })) { toast("حُفظ"); render(); }
-  }}));
+  syncChips();
+  repaintPicked();
+  card.appendChild(picked);
+
+  card.appendChild(el("button", { class: "btn ghost", style: "margin-top:14px",
+    text: "احفظ المرشّحين", onclick: async () => {
+      if (chosen.length < 2) return toast("اختر مرشّحَين على الأقل", "bad");
+      const payload = chosen.map(c => ({
+        player_id: c.id,
+        shirt_number: c.number === "" ? null : parseInt(c.number, 10)
+      }));
+      if (await call("admin_set_nominees", {
+        p_match_id: d.id, p_nominees: payload })) { toast("حُفظ"); render(); }
+    }}));
   box.appendChild(card);
 
   /* الفتح */
