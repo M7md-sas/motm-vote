@@ -455,6 +455,93 @@ function livePanel(box, d) {
   }, 5000);
 }
 
+/* ===== نص النتيجة الجاهز للمشاركة مع اللجنة ===== */
+function resultText(d) {
+  const r = d.results;
+  const winners = r.committee_winner_id ? [r.committee_winner_id] : (r.winner_player_ids || []);
+  const named = p => p.name + (p.shirt_number === null || p.shirt_number === undefined
+                               ? "" : " (" + arNum(p.shirt_number) + ")");
+  const lines = ["🏆 أفضل لاعب — " + d.title];
+
+  if (r.total_voters === 0) {
+    lines.push("لم يُسجَّل أي صوت في هذه المباراة.");
+  } else {
+    const win = r.nominees.filter(n => winners.indexOf(n.player_id) !== -1).map(named);
+    if (win.length) lines.push("الفائز: " + win.join(" و "));
+    lines.push("");
+    r.nominees.forEach(n => lines.push("• " + n.name + " — " + arNum(n.percent) + "٪"));
+    lines.push("");
+    lines.push("إجمالي المصوّتين: " + arNum(r.total_voters));
+  }
+
+  if (r.tie_pending) lines.push("تعادل — بانتظار قرار اللجنة");
+  else if (r.committee_winner_id) lines.push("حُسم التعادل بقرار اللجنة");
+
+  lines.push("");
+  lines.push(CFGS.tournament_name);
+  lines.push(linkFor(d.code));
+  return lines.join("\n");
+}
+
+async function shareResult(d) {
+  const text = resultText(d);
+
+  /* 1) قائمة مشاركة الجوّال — المسار الأساسي */
+  if (navigator.share) {
+    try {
+      await navigator.share({ title: "نتيجة أفضل لاعب", text: text });
+      return;
+    } catch (e) {
+      if (e && e.name === "AbortError") return;   /* أغلق القائمة بنفسه */
+    }
+  }
+
+  /* 2) النسخ الحديث */
+  try {
+    await navigator.clipboard.writeText(text);
+    toast("نُسخت النتيجة — الصقها في محادثة اللجنة");
+    return;
+  } catch (e) { /* نكمل للطريقة الأقدم */ }
+
+  /* 3) النسخ بالطريقة القديمة، تشتغل بلا أذونات */
+  try {
+    const ta = el("textarea", { style: "position:fixed;inset-inline-start:-9999px;top:0" });
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    const done = document.execCommand("copy");
+    ta.remove();
+    if (done) { toast("نُسخت النتيجة — الصقها في محادثة اللجنة"); return; }
+  } catch (e) { /* نكمل للعرض اليدوي */ }
+
+  /* 4) آخر حل: نعرض النص ليُنسخ يدوياً */
+  showCopyBox(text);
+}
+
+function showCopyBox(text) {
+  const ov = el("div", { class: "qrfull" });
+  const ta = el("textarea", { style: "width:min(92vw,520px);height:46vh;font-size:15px" });
+  ta.value = text;
+
+  const inner = el("div", { class: "center" }, [
+    el("p", { style: "font-weight:700;margin:0 0 10px", text: "انسخ النتيجة وأرسلها للجنة" }),
+    ta,
+    el("button", { class: "btn", style: "margin-top:12px", text: "تم",
+      onclick: () => ov.remove() })
+  ]);
+
+  ov.appendChild(inner);
+  ov.addEventListener("click", e => { if (e.target === ov) ov.remove(); });
+  document.body.appendChild(ov);
+  ta.focus();
+  ta.select();
+}
+
+function shareButton(d) {
+  return el("button", { class: "btn", style: "margin-top:14px",
+    text: "شارك النتيجة مع اللجنة", onclick: () => shareResult(d) });
+}
+
 /* النتيجة بعد الإغلاق */
 function resultPanel(box, d) {
   const r = d.results;
@@ -463,6 +550,7 @@ function resultPanel(box, d) {
 
   if (r.total_voters === 0) {
     card.appendChild(el("p", { class: "muted", text: "لم يُسجَّل أي صوت." }));
+    card.appendChild(shareButton(d));
     box.appendChild(card);
     return;
   }
@@ -498,6 +586,8 @@ function resultPanel(box, d) {
   } else if (r.committee_winner_id) {
     card.appendChild(el("p", { class: "muted center", text: "حُسم التعادل بقرار اللجنة." }));
   }
+
+  card.appendChild(shareButton(d));
   box.appendChild(card);
 }
 
