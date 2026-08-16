@@ -23,35 +23,97 @@ async function rpc(fn, args) {
   return res.json();
 }
 
-/* ---------- بصمة الجهاز ---------- */
-function deviceId() {
+/* ---------- معرّف الجهاز ----------
+   يُحفظ في ثلاثة مخازن، ويُقرأ من أيّها نجا. سفاري في التصفّح الخاص يرفض
+   الكتابة في localStorage، وكان ذلك يولّد معرّفاً جديداً كل تحديث بلا أثر ظاهر. */
+const DEV_KEY = "motm_device";
+
+function readCookie(name) {
+  try {
+    const hit = document.cookie.split("; ").filter(c => c.indexOf(name + "=") === 0)[0];
+    return hit ? decodeURIComponent(hit.slice(name.length + 1)) : null;
+  } catch (e) { return null; }
+}
+
+function writeCookie(name, value) {
+  try {
+    document.cookie = name + "=" + encodeURIComponent(value) +
+      ";path=/;max-age=31536000;samesite=lax" +
+      (location.protocol === "https:" ? ";secure" : "");
+  } catch (e) { /* تجاهل */ }
+}
+
+function idbGet() {
+  return new Promise(resolve => {
+    try {
+      const rq = indexedDB.open("motm", 1);
+      rq.onupgradeneeded = () => rq.result.createObjectStore("kv");
+      rq.onerror = () => resolve(null);
+      rq.onsuccess = () => {
+        try {
+          const db = rq.result;
+          const g = db.transaction("kv", "readonly").objectStore("kv").get(DEV_KEY);
+          g.onsuccess = () => resolve(g.result || null);
+          g.onerror = () => resolve(null);
+        } catch (e) { resolve(null); }
+      };
+    } catch (e) { resolve(null); }
+  });
+}
+
+function idbPut(value) {
+  return new Promise(resolve => {
+    try {
+      const rq = indexedDB.open("motm", 1);
+      rq.onupgradeneeded = () => rq.result.createObjectStore("kv");
+      rq.onerror = () => resolve();
+      rq.onsuccess = () => {
+        try {
+          rq.result.transaction("kv", "readwrite").objectStore("kv").put(value, DEV_KEY);
+        } catch (e) { /* تجاهل */ }
+        resolve();
+      };
+    } catch (e) { resolve(); }
+  });
+}
+
+async function deviceId() {
   let id = null;
-  try { id = localStorage.getItem("motm_device"); } catch (e) { /* تخزين محجوب */ }
+  try { id = localStorage.getItem(DEV_KEY); } catch (e) { /* تخزين محجوب */ }
+  if (!id) id = readCookie(DEV_KEY);
+  if (!id) id = await idbGet();
+
   if (!id) {
     id = (crypto.randomUUID ? crypto.randomUUID()
                             : Date.now().toString(36) + Math.random().toString(36).slice(2));
-    try { localStorage.setItem("motm_device", id); } catch (e) { /* تجاهل */ }
   }
+
+  /* يُعاد نشره في كل مخزن، فلو ضاع أحدها بقي الباقي */
+  try { localStorage.setItem(DEV_KEY, id); } catch (e) { /* تجاهل */ }
+  writeCookie(DEV_KEY, id);
+  idbPut(id);
   return id;
 }
 
+/* ---------- بصمة العتاد ----------
+   إشارات العتاد وحدها، بلا userAgent ولا canvas — فتتطابق البصمة بين متصفحات
+   الجهاز الواحد، وينكسر الالتفاف بفتح متصفح ثانٍ. */
 async function deviceSig() {
-  const parts = [
-    navigator.userAgent, navigator.language,
-    screen.width + "x" + screen.height, screen.colorDepth,
-    new Date().getTimezoneOffset(), navigator.hardwareConcurrency || 0
-  ];
-  try {
-    const c = document.createElement("canvas");
-    const x = c.getContext("2d");
-    x.textBaseline = "top";
-    x.font = "14px Arial";
-    x.fillStyle = "#f60"; x.fillRect(0, 0, 60, 20);
-    x.fillStyle = "#069"; x.fillText("motm", 2, 2);
-    parts.push(c.toDataURL().slice(-64));
-  } catch (e) { /* تجاهل */ }
+  let tz = "";
+  try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || ""; } catch (e) { /* تجاهل */ }
 
-  const raw = parts.join("|");
+  const raw = [
+    Math.max(screen.width, screen.height) + "x" + Math.min(screen.width, screen.height),
+    screen.colorDepth,
+    window.devicePixelRatio || 1,
+    tz,
+    new Date().getTimezoneOffset(),
+    navigator.hardwareConcurrency || 0,
+    navigator.deviceMemory || 0,
+    navigator.maxTouchPoints || 0,
+    (navigator.platform || "")
+  ].join("|");
+
   try {
     const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(raw));
     return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, "0")).join("");

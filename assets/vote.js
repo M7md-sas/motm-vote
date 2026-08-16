@@ -11,8 +11,9 @@ const ERRORS = {
   BAD_TOKEN:          "انتهت صلاحية الصفحة. حدّثها وأعد المحاولة.",
   BAD_NOMINEE:        "المرشّح المختار غير صحيح.",
   ALREADY_VOTED:      "سبق أن صوّتّ من هذا الجهاز.",
+  PAIR_LIMIT:         "سُجِّل صوت من هذا الجهاز على هذه الشبكة. لو لم تصوّت أنت، جرّب من بيانات جوّالك بدل الواي فاي.",
   IP_LIMIT:           "بلغت شبكتك الحد المسموح من الأصوات لهذه المباراة.",
-  DEVICE_LIMIT:       "بلغ هذا الجهاز الحد المسموح من الأصوات.",
+  DEVICE_LIMIT:       "بلغ هذا الجهاز الحد المسموح من الأصوات لهذه المباراة.",
   TURNSTILE_REQUIRED: "تعذّر التحقّق الأمني. حدّث الصفحة وأعد المحاولة."
 };
 
@@ -213,7 +214,7 @@ function viewClosed() {
     viewMessage("الرابط ناقص", "افتح رابط المباراة كاملاً كما وصلك.");
     return;
   }
-  FP = deviceId();
+  FP = await deviceId();
   SIG = await deviceSig();
   await load();
   document.addEventListener("visibilitychange", () => {

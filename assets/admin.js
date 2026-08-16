@@ -467,7 +467,31 @@ function livePanel(box, d) {
                           text: arNum(d.total_votes) });
   const totalLbl = el("p", { class: "muted center", style: "margin:0", text: "إجمالي الأصوات" });
   const rows = el("div", { style: "margin-top:14px" });
+  const blocks = el("div", { style: "margin-top:12px" });
   const timer = el("p", { class: "timer" });
+
+  const BLOCK_LABEL = {
+    PAIR_LIMIT:    "محاولة تصويت ثانٍ من نفس الجهاز والشبكة",
+    ALREADY_VOTED: "محاولة تصويت ثانٍ من نفس الجهاز",
+    DEVICE_LIMIT:  "تجاوز حد الجهاز",
+    IP_LIMIT:      "تجاوز حد الشبكة",
+    BAD_TOKEN:     "طلب بلا جلسة صحيحة"
+  };
+
+  const paintBlocks = data => {
+    blocks.innerHTML = "";
+    const b = data.blocks || {};
+    const keys = Object.keys(b).filter(k => b[k] > 0);
+    if (!keys.length) return;
+    let sum = 0;
+    keys.forEach(k => { sum += b[k]; });
+    blocks.appendChild(el("p", { class: "badge amber",
+      text: "محاولات مرفوضة: " + arNum(sum) }));
+    keys.sort((x, y) => b[y] - b[x]).forEach(k => {
+      blocks.appendChild(el("p", { class: "muted", style: "font-size:13px;margin:4px 0",
+        text: "• " + (BLOCK_LABEL[k] || k) + " — " + arNum(b[k]) }));
+    });
+  };
 
   const paint = data => {
     total.textContent = arNum(data.total_votes);
@@ -488,8 +512,10 @@ function livePanel(box, d) {
     });
   };
   paint(d);
+  paintBlocks(d);
 
   card.appendChild(total); card.appendChild(totalLbl); card.appendChild(rows);
+  card.appendChild(blocks);
   if (d.closes_at) card.appendChild(timer);
 
   card.appendChild(el("div", { class: "row", style: "margin-top:14px" }, [
@@ -521,6 +547,7 @@ function livePanel(box, d) {
     if (!fresh) return;
     if (fresh.state !== "open") { stopRefresh(); return render(); }
     paint(fresh);
+    paintBlocks(fresh);
   }, 5000);
 }
 
@@ -986,6 +1013,7 @@ function viewSettings(box) {
   const note  = el("input", { type: "text",  value: CFGS.tie_rule_note });
   const iplim = el("input", { type: "number", min: "1", max: "200", value: CFGS.ip_vote_limit });
   const siglim= el("input", { type: "number", min: "1", max: "50",  value: CFGS.device_sig_limit });
+  const pairlim = el("input", { type: "number", min: "1", max: "20", value: CFGS.pair_vote_limit });
   const tsOn  = el("select");
   [["false", "مطفأ — التصويت مباشر بلا تحقّق"], ["true", "مفعّل"]]
     .forEach(([v, t]) => tsOn.appendChild(el("option", { value: v, text: t })));
@@ -998,6 +1026,9 @@ function viewSettings(box) {
     el("label", { text: "اسم البطولة" }), name,
     el("label", { text: "اللون الأساسي" }), color,
     el("label", { text: "نص قاعدة التعادل المعروض للجمهور" }), note,
+    el("label", { text: "حد الأصوات لكل جهاز على الشبكة نفسها" }), pairlim,
+    el("p", { class: "muted", style: "font-size:13px;margin:6px 0 0",
+      text: "هذا أقوى مانع للتكرار. اتركه على 1، وارفعه إلى 2 فقط لو شكا مصوّتون حقيقيون من الحجب." }),
     el("div", { class: "split" }, [
       el("div", {}, [el("label", { text: "حد الأصوات لكل شبكة" }), iplim]),
       el("div", {}, [el("label", { text: "حد الأصوات لكل جهاز متطابق" }), siglim])
@@ -1009,6 +1040,7 @@ function viewSettings(box) {
       const r = await call("admin_save_settings", {
         p_name: name.value, p_color: color.value, p_tie_note: note.value,
         p_ip_limit: parseInt(iplim.value, 10), p_sig_limit: parseInt(siglim.value, 10),
+        p_pair_limit: parseInt(pairlim.value, 10),
         p_turnstile_enabled: tsOn.value === "true",
         p_turnstile_site_key: tsKey.value.trim() || null });
       if (r && r.ok) {
