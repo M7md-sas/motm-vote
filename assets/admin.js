@@ -211,7 +211,8 @@ async function viewMatch(box) {
     el("div", { class: "item", style: "border:0;padding:0;margin-bottom:8px" }, [
       el("div", { class: "grow" }, [
         el("b", { text: d.title }),
-        el("span", { text: fmtDate(d.match_date) })
+        el("span", { text: fmtDate(d.match_date) +
+                           (d.require_login ? " · تصويت موثّق بـ Google" : "") })
       ]),
       el("span", { class: "badge " + cls, text: label })
     ]),
@@ -442,17 +443,33 @@ function nomineePicker(box, d) {
 
   /* الفتح */
   const mins = el("select");
-  [["10", "١٠ دقائق"], ["5", "٥ دقائق"], ["15", "١٥ دقيقة"], ["30", "٣٠ دقيقة"], ["0", "بلا مؤقّت"]]
+  [["10", "10 دقائق"], ["5", "5 دقائق"], ["15", "15 دقيقة"], ["30", "30 دقيقة"], ["0", "بلا مؤقّت"]]
     .forEach(([v, t]) => mins.appendChild(el("option", { value: v, text: t })));
+
+  const login = el("select");
+  [["false", "مفتوح للجميع بلا تسجيل"], ["true", "يتطلّب تسجيل دخول Google"]]
+    .forEach(([v, t]) => login.appendChild(el("option", { value: v, text: t })));
+  login.value = String(!!(CFGS && CFGS.login_default));
+
+  const hint = el("p", { class: "muted", style: "font-size:13px;margin:6px 0 0" });
+  const paintHint = () => {
+    hint.textContent = login.value === "true"
+      ? "صوت واحد لكل حساب Google. أقوى منع للتكرار، لكن توقّع عدد مصوّتين أقل، ومن لا يملك حساباً لن يصوّت."
+      : "بلا احتكاك وأكثر مشاركة. المنع يعتمد على الجهاز والشبكة، ومن يبدّل شبكته يقدر يصوّت مرتين.";
+  };
+  paintHint();
+  login.addEventListener("change", paintHint);
 
   box.appendChild(el("div", { class: "card" }, [
     el("h2", { text: "افتح التصويت" }),
     el("label", { text: "مدة التصويت" }), mins,
-    el("div", { style: "height:12px" }),
+    el("label", { text: "طريقة التصويت" }), login, hint,
+    el("div", { style: "height:14px" }),
     el("button", { class: "btn", text: "افتح التصويت الآن", onclick: async () => {
       if (d.nominees.length < 2) return toast("احفظ المرشّحين أولاً", "bad");
       if (await call("admin_open_voting", {
-        p_match_id: d.id, p_minutes: parseInt(mins.value, 10) })) { toast("فُتح التصويت"); render(); }
+        p_match_id: d.id, p_minutes: parseInt(mins.value, 10),
+        p_require_login: login.value === "true" })) { toast("فُتح التصويت"); render(); }
     }})
   ]));
 }
@@ -1014,6 +1031,10 @@ function viewSettings(box) {
   const iplim = el("input", { type: "number", min: "1", max: "200", value: CFGS.ip_vote_limit });
   const siglim= el("input", { type: "number", min: "1", max: "50",  value: CFGS.device_sig_limit });
   const pairlim = el("input", { type: "number", min: "1", max: "20", value: CFGS.pair_vote_limit });
+  const logdef = el("select");
+  [["false", "مفتوح للجميع بلا تسجيل"], ["true", "يتطلّب تسجيل Google"]]
+    .forEach(([v, t]) => logdef.appendChild(el("option", { value: v, text: t })));
+  logdef.value = String(CFGS.login_default);
   const tsOn  = el("select");
   [["false", "مطفأ — التصويت مباشر بلا تحقّق"], ["true", "مفعّل"]]
     .forEach(([v, t]) => tsOn.appendChild(el("option", { value: v, text: t })));
@@ -1026,6 +1047,9 @@ function viewSettings(box) {
     el("label", { text: "اسم البطولة" }), name,
     el("label", { text: "اللون الأساسي" }), color,
     el("label", { text: "نص قاعدة التعادل المعروض للجمهور" }), note,
+    el("label", { text: "الوضع الافتراضي لفتح المباريات" }), logdef,
+    el("p", { class: "muted", style: "font-size:13px;margin:6px 0 0",
+      text: "هذا مجرّد افتراضي يظهر لك عند فتح كل مباراة، وتقدر تغيّره لكل مباراة على حدة." }),
     el("label", { text: "حد الأصوات لكل جهاز على الشبكة نفسها" }), pairlim,
     el("p", { class: "muted", style: "font-size:13px;margin:6px 0 0",
       text: "هذا أقوى مانع للتكرار. اتركه على 1، وارفعه إلى 2 فقط لو شكا مصوّتون حقيقيون من الحجب." }),
@@ -1041,6 +1065,7 @@ function viewSettings(box) {
         p_name: name.value, p_color: color.value, p_tie_note: note.value,
         p_ip_limit: parseInt(iplim.value, 10), p_sig_limit: parseInt(siglim.value, 10),
         p_pair_limit: parseInt(pairlim.value, 10),
+        p_login_default: logdef.value === "true",
         p_turnstile_enabled: tsOn.value === "true",
         p_turnstile_site_key: tsKey.value.trim() || null });
       if (r && r.ok) {

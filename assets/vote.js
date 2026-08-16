@@ -11,6 +11,8 @@ const ERRORS = {
   BAD_TOKEN:          "انتهت صلاحية الصفحة. حدّثها وأعد المحاولة.",
   BAD_NOMINEE:        "المرشّح المختار غير صحيح.",
   ALREADY_VOTED:      "سبق أن صوّتّ من هذا الجهاز.",
+  LOGIN_REQUIRED:     "هذه المباراة تتطلّب تسجيل الدخول قبل التصويت.",
+  ACCOUNT_VOTED:      "سبق أن صوّتّ بهذا الحساب في هذه المباراة.",
   PAIR_LIMIT:         "سُجِّل صوت من هذا الجهاز على هذه الشبكة. لو لم تصوّت أنت، جرّب من بيانات جوّالك بدل الواي فاي.",
   IP_LIMIT:           "بلغت شبكتك الحد المسموح من الأصوات لهذه المباراة.",
   DEVICE_LIMIT:       "بلغ هذا الجهاز الحد المسموح من الأصوات لهذه المباراة.",
@@ -91,6 +93,31 @@ function nomineeButton(n, onPick) {
 }
 
 function viewOpen() {
+  /* مباراة تتطلّب تسجيلاً ولم يسجّل بعد: بوابة قبل عرض المرشّحين */
+  if (DATA.require_login && !DATA.signed_in) {
+    app.appendChild(el("div", { class: "card center" }, [
+      el("p", { class: "badge", text: "تصويت موثّق" }),
+      el("h2", { text: "سجّل دخولك للتصويت" }),
+      el("p", { class: "muted", text: "هذه المباراة تتطلّب حساب Google لضمان صوت واحد لكل شخص. لن يُعرف لمن صوّتّ." }),
+      el("div", { style: "height:12px" }),
+      el("button", { class: "btn", text: "المتابعة بحساب Google", onclick: signInWithGoogle })
+    ]));
+
+    if (DATA.closes_at) {
+      const t = el("p", { class: "timer" });
+      app.appendChild(t);
+      const end = new Date(DATA.closes_at).getTime();
+      const upd = () => {
+        const left = Math.round((end - Date.now()) / 1000);
+        if (left <= 0) { clearTimers(); load(); return; }
+        t.textContent = "يُغلق التصويت خلال " + fmtClock(left);
+      };
+      upd();
+      tick = setInterval(upd, 1000);
+    }
+    return;
+  }
+
   const card = el("div", { class: "card" }, [
     el("h2", { text: "اختر أفضل لاعب" }),
     el("p", { class: "muted", text: "صوت واحد فقط، ولا يمكن تغييره بعد الإرسال." })
@@ -214,6 +241,7 @@ function viewClosed() {
     viewMessage("الرابط ناقص", "افتح رابط المباراة كاملاً كما وصلك.");
     return;
   }
+  loadSession();
   FP = await deviceId();
   SIG = await deviceSig();
   await load();

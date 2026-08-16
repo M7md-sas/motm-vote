@@ -2,6 +2,36 @@
 
 const CFG = window.MOTM_CFG;
 
+/* ---------- هوية المصوّت عند تفعيل التسجيل ----------
+   بلا مكتبة خارجية: نُحوّل إلى Google عبر Supabase، ونلتقط الرمز من عنوان
+   الصفحة عند العودة. لا يعتمد على تخزين المتصفح، فيعمل في التصفّح الخاص. */
+let AUTH_TOKEN = null;
+
+function loadSession() {
+  const h = location.hash || "";
+  if (h.indexOf("access_token=") !== -1) {
+    const p = new URLSearchParams(h.slice(1));
+    AUTH_TOKEN = p.get("access_token");
+    if (AUTH_TOKEN) {
+      try { sessionStorage.setItem("motm_tok", AUTH_TOKEN); } catch (e) { /* تجاهل */ }
+      history.replaceState({}, "", location.pathname + location.search);
+      return;
+    }
+  }
+  try { AUTH_TOKEN = sessionStorage.getItem("motm_tok"); } catch (e) { /* تجاهل */ }
+}
+
+function signInWithGoogle() {
+  const back = location.origin + location.pathname + location.search;
+  location.href = CFG.url + "/auth/v1/authorize?provider=google&redirect_to=" +
+                  encodeURIComponent(back);
+}
+
+function signOut() {
+  AUTH_TOKEN = null;
+  try { sessionStorage.removeItem("motm_tok"); } catch (e) { /* تجاهل */ }
+}
+
 /* ---------- نداء دوال قاعدة البيانات ---------- */
 async function rpc(fn, args) {
   const res = await fetch(CFG.url + "/rest/v1/rpc/" + fn, {
@@ -9,7 +39,7 @@ async function rpc(fn, args) {
     headers: {
       "Content-Type": "application/json",
       "apikey": CFG.key,
-      "Authorization": "Bearer " + CFG.key
+      "Authorization": "Bearer " + (AUTH_TOKEN || CFG.key)
     },
     body: JSON.stringify(args || {})
   });
