@@ -6,18 +6,33 @@ const CFG = window.MOTM_CFG;
    بلا مكتبة خارجية: نُحوّل إلى Google عبر Supabase، ونلتقط الرمز من عنوان
    الصفحة عند العودة. لا يعتمد على تخزين المتصفح، فيعمل في التصفّح الخاص. */
 let AUTH_TOKEN = null;
+let AUTH_ERROR = null;
 
 function loadSession() {
   const h = location.hash || "";
-  if (h.indexOf("access_token=") !== -1) {
+
+  if (h.length > 1) {
     const p = new URLSearchParams(h.slice(1));
-    AUTH_TOKEN = p.get("access_token");
-    if (AUTH_TOKEN) {
-      try { sessionStorage.setItem("motm_tok", AUTH_TOKEN); } catch (e) { /* تجاهل */ }
+
+    /* رفض المستخدم للأذونات أو فشل التحويل يرجع هنا، وتركه بلا تفسير يحيّره */
+    const err = p.get("error_description") || p.get("error");
+    if (err) {
+      AUTH_ERROR = /access_denied|denied/i.test(err)
+        ? "أُلغي تسجيل الدخول. لن تقدر تصوّت في هذه المباراة قبل التسجيل."
+        : "تعذّر تسجيل الدخول. حاول مرة أخرى.";
+      history.replaceState({}, "", location.pathname + location.search);
+      return;
+    }
+
+    const tok = p.get("access_token");
+    if (tok) {
+      AUTH_TOKEN = tok;
+      try { sessionStorage.setItem("motm_tok", tok); } catch (e) { /* تجاهل */ }
       history.replaceState({}, "", location.pathname + location.search);
       return;
     }
   }
+
   try { AUTH_TOKEN = sessionStorage.getItem("motm_tok"); } catch (e) { /* تجاهل */ }
 }
 

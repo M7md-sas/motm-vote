@@ -11,8 +11,8 @@ const ERRORS = {
   BAD_TOKEN:          "انتهت صلاحية الصفحة. حدّثها وأعد المحاولة.",
   BAD_NOMINEE:        "المرشّح المختار غير صحيح.",
   ALREADY_VOTED:      "سبق أن صوّتّ من هذا الجهاز.",
-  LOGIN_REQUIRED:     "هذه المباراة تتطلّب تسجيل الدخول قبل التصويت.",
-  ACCOUNT_VOTED:      "سبق أن صوّتّ بهذا الحساب في هذه المباراة.",
+  LOGIN_REQUIRED:     "سجّل دخولك بحساب Google أولاً، ثم صوّت.",
+  ACCOUNT_VOTED:      "هذا الحساب صوّت في هذه المباراة. لو الجوّال مشترَك، بدّل الحساب.",
   PAIR_LIMIT:         "سُجِّل صوت من هذا الجهاز على هذه الشبكة. لو لم تصوّت أنت، جرّب من بيانات جوّالك بدل الواي فاي.",
   IP_LIMIT:           "بلغت شبكتك الحد المسموح من الأصوات لهذه المباراة.",
   DEVICE_LIMIT:       "بلغ هذا الجهاز الحد المسموح من الأصوات لهذه المباراة.",
@@ -95,13 +95,32 @@ function nomineeButton(n, onPick) {
 function viewOpen() {
   /* مباراة تتطلّب تسجيلاً ولم يسجّل بعد: بوابة قبل عرض المرشّحين */
   if (DATA.require_login && !DATA.signed_in) {
-    app.appendChild(el("div", { class: "card center" }, [
+    const gate = el("div", { class: "card center" }, [
       el("p", { class: "badge", text: "تصويت موثّق" }),
       el("h2", { text: "سجّل دخولك للتصويت" }),
-      el("p", { class: "muted", text: "هذه المباراة تتطلّب حساب Google لضمان صوت واحد لكل شخص. لن يُعرف لمن صوّتّ." }),
-      el("div", { style: "height:12px" }),
-      el("button", { class: "btn", text: "المتابعة بحساب Google", onclick: signInWithGoogle })
+      el("p", { class: "muted", text: "هذه المباراة تتطلّب حساب Google لضمان صوت واحد لكل شخص. صوتك سرّي ولن يُعرف لمن صوّتّ." })
+    ]);
+
+    if (AUTH_ERROR) gate.appendChild(el("p", { class: "badge red", text: AUTH_ERROR }));
+
+    gate.appendChild(el("div", { style: "height:12px" }));
+    gate.appendChild(el("button", { class: "btn", text: "المتابعة بحساب Google",
+                                    onclick: signInWithGoogle }));
+
+    /* من يظن نفسه مستثنى غالباً يملك حساباً ولا يدري */
+    gate.appendChild(el("div", { style: "margin-top:18px;text-align:right" }, [
+      el("p", { style: "font-weight:700;font-size:15px;margin:0 0 6px", text: "ما عندك حساب؟" }),
+      el("p", { class: "muted", style: "font-size:14px;margin:0 0 4px",
+        text: "• لو جوّالك أندرويد فعندك حساب أصلاً — هو نفسه حساب متجر Play." }),
+      el("p", { class: "muted", style: "font-size:14px;margin:0 0 4px",
+        text: "• الحساب لا يشترط بريد جيميل، أي بريد يصلح." }),
+      el("p", { class: "muted", style: "font-size:14px;margin:0 0 10px",
+        text: "• إنشاؤه مجاني ويأخذ دقيقتين، وترجع تصوّت بعده." }),
+      el("a", { class: "btn ghost sm", target: "_blank", rel: "noopener",
+        href: "https://accounts.google.com/signup", text: "أنشئ حساباً الآن" })
     ]));
+
+    app.appendChild(gate);
 
     if (DATA.closes_at) {
       const t = el("p", { class: "timer" });
@@ -163,6 +182,10 @@ function viewOpen() {
       });
       if (r && r.ok) { await load(); toast("سُجّل صوتك"); return; }
       toast(ERRORS[r && r.error] || "تعذّر تسجيل الصوت", "bad");
+      if (r && r.error === "ACCOUNT_VOTED") {
+        btn.replaceWith(switchAccountButton("تصويت بحساب آخر"));
+        return;
+      }
       await load();
     } catch (e) {
       toast("تعذّر الإرسال. تحقّق من اتصالك.", "bad");
@@ -172,15 +195,29 @@ function viewOpen() {
   }
 }
 
+function switchAccountButton(label) {
+  return el("button", { class: "btn ghost sm", style: "margin-top:14px", text: label,
+    onclick: () => { signOut(); location.reload(); } });
+}
+
 function viewVoted() {
   const mine = DATA.nominees.find(n => n.nominee_id === DATA.my_nominee_id);
-  app.appendChild(el("div", { class: "card center" }, [
+  const card = el("div", { class: "card center" }, [
     el("p", { class: "badge", text: "تم تسجيل صوتك" }),
     el("h2", { text: "شكراً لك" }),
     mine ? el("p", { text: "صوّتّ لـ " }) : null,
     mine ? el("p", { style: "font-size:20px;font-weight:700;margin:0", text: mine.name }) : null,
     el("p", { class: "muted", text: "النتيجة تظهر هنا فور إغلاق التصويت. أبقِ الصفحة مفتوحة." })
-  ]));
+  ]);
+
+  /* جوّال مشترَك: أخوك صوّت بحسابه وتبي تصوّت بحسابك */
+  if (DATA.require_login && DATA.signed_in) {
+    card.appendChild(el("p", { class: "muted", style: "font-size:13px;margin-top:14px",
+      text: "يصوّت غيرك من نفس الجوّال؟" }));
+    card.appendChild(switchAccountButton("تصويت بحساب آخر"));
+  }
+
+  app.appendChild(card);
   poll = setInterval(load, 15000);
 }
 
