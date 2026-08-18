@@ -1028,9 +1028,9 @@ function viewSettings(box) {
   const name  = el("input", { type: "text",  value: CFGS.tournament_name });
   const color = el("input", { type: "color", value: CFGS.brand_color });
   const note  = el("input", { type: "text",  value: CFGS.tie_rule_note });
-  const iplim = el("input", { type: "number", min: "1", max: "200", value: CFGS.ip_vote_limit });
-  const siglim= el("input", { type: "number", min: "1", max: "50",  value: CFGS.device_sig_limit });
-  const pairlim = el("input", { type: "number", min: "1", max: "20", value: CFGS.pair_vote_limit });
+  const iplim = el("input", { type: "number", min: "0", max: "500", value: CFGS.ip_vote_limit });
+  const siglim= el("input", { type: "number", min: "0", max: "50",  value: CFGS.device_sig_limit });
+  const pairlim = el("input", { type: "number", min: "0", max: "20", value: CFGS.pair_vote_limit });
   const logdef = el("select");
   [["false", "مفتوح للجميع بلا تسجيل"], ["true", "يتطلّب تسجيل Google"]]
     .forEach(([v, t]) => logdef.appendChild(el("option", { value: v, text: t })));
@@ -1050,13 +1050,16 @@ function viewSettings(box) {
     el("label", { text: "الوضع الافتراضي لفتح المباريات" }), logdef,
     el("p", { class: "muted", style: "font-size:13px;margin:6px 0 0",
       text: "هذا مجرّد افتراضي يظهر لك عند فتح كل مباراة، وتقدر تغيّره لكل مباراة على حدة." }),
-    el("label", { text: "حد الأصوات لكل جهاز على الشبكة نفسها" }), pairlim,
-    el("p", { class: "muted", style: "font-size:13px;margin:6px 0 0",
-      text: "هذا أقوى مانع للتكرار. اتركه على 1، وارفعه إلى 2 فقط لو شكا مصوّتون حقيقيون من الحجب." }),
+    el("p", { class: "badge red", text: "⚠ الحدود الثلاثة التالية تحجب مصوّتين حقيقيين" }),
+    el("p", { class: "muted", style: "font-size:13px;margin:6px 0 12px",
+      text: "الأجهزة المتشابهة تُنتج البصمة نفسها، وعشرات الناس في الملعب يتشاركون شبكة واحدة. فأي حد هنا يمنع أشخاصاً مختلفين ظناً أنهم شخص واحد. اتركها على 0 = معطّل ما لم تواجه تلاعباً واضحاً." }),
+    el("label", { text: "حد الأصوات لكل جهاز على الشبكة نفسها — 0 = معطّل" }), pairlim,
     el("div", { class: "split" }, [
-      el("div", {}, [el("label", { text: "حد الأصوات لكل شبكة" }), iplim]),
-      el("div", {}, [el("label", { text: "حد الأصوات لكل جهاز متطابق" }), siglim])
+      el("div", {}, [el("label", { text: "حد الأصوات لكل شبكة — 0 = معطّل" }), iplim]),
+      el("div", {}, [el("label", { text: "حد الأصوات لكل جهاز متطابق — 0 = معطّل" }), siglim])
     ]),
+    el("p", { class: "muted", style: "font-size:13px;margin:8px 0 0",
+      text: "منع التصويت مرتين من نفس المتصفح يعمل دائماً ولا يحتاج أياً من هذه الحدود، ولا يخطئ أبداً." }),
     el("label", { text: "حماية البوتات (Turnstile)" }), tsOn,
     el("label", { text: "مفتاح Turnstile العام" }), tsKey,
     el("div", { style: "height:14px" }),

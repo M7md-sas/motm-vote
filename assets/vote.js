@@ -245,8 +245,7 @@ function viewClosed() {
         el("span", { class: "pct", text: arNum(n.percent) + "٪" })
       ]),
       el("div", { class: "bar" }, [ el("i", { style: "width:" + n.percent + "%" }) ]),
-      el("div", { class: "muted", style: "font-size:13px",
-                  text: n.team + " · " + arNum(n.votes) + " صوت" })
+      el("div", { class: "muted", style: "font-size:13px", text: n.team })
     ]);
     const row = el("div", { class: "res" + (win ? " win" : ""),
                             style: "display:flex;align-items:center;gap:12px" });
@@ -254,9 +253,6 @@ function viewClosed() {
     row.appendChild(body);
     card.appendChild(row);
   });
-
-  card.appendChild(el("p", { class: "muted center",
-    text: "إجمالي المصوّتين: " + arNum(total) }));
 
   if (r.tie_pending) {
     card.appendChild(el("p", { class: "badge amber", text: "تعادل — بانتظار قرار اللجنة" }));
