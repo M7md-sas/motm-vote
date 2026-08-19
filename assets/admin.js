@@ -706,6 +706,77 @@ function resultPanel(box, d) {
 
   card.appendChild(shareButton(d));
   box.appendChild(card);
+
+  auditPanel(box, d);
+}
+
+/* ===== مراجعة الأصوات بعد الإغلاق =====
+   لا يُحجب أحد وقت التصويت. هنا فقط تُعرض المجموعات المشبوهة وتُستبعد بقرارك. */
+async function auditPanel(box, d) {
+  const card = el("div", { class: "card" }, [
+    el("h2", { text: "مراجعة الأصوات" })
+  ]);
+  const body = el("div", { class: "muted", text: "جارٍ الفحص…" });
+  card.appendChild(body);
+  box.appendChild(card);
+
+  const a = await call("admin_vote_audit", { p_match_id: d.id });
+  if (!a) { body.textContent = "تعذّر الفحص."; return; }
+
+  const clusters = a.clusters || [];
+  const flagged = clusters.filter(c => c.verdict !== "طبيعي");
+  const excluded = (d.results && d.results.excluded) || 0;
+
+  body.textContent = "";
+
+  if (excluded > 0) {
+    body.appendChild(el("p", { class: "badge amber",
+      text: "مستبعَد من الحساب: " + arNum(excluded) + " صوت" }));
+  }
+
+  if (!clusters.length) {
+    body.appendChild(el("p", { class: "muted",
+      text: "لا توجد أصوات متكرّرة من جهاز واحد. النتيجة نظيفة." }));
+    return;
+  }
+
+  if (!flagged.length) {
+    body.appendChild(el("p", { class: "muted",
+      text: "وُجدت " + arNum(clusters.length) + " مجموعة أصوات من أجهزة متشابهة، وكلها تبدو طبيعية — أشخاص مختلفون بجوّالات متقاربة." }));
+  } else {
+    body.appendChild(el("p", { class: "muted", style: "margin-bottom:10px",
+      text: "الأصوات التالية جاءت من جهاز واحد وشبكة واحدة. راجعها واستبعد ما تراه تلاعباً." }));
+  }
+
+  const show = flagged.length ? flagged : [];
+  show.forEach(c => {
+    const cls = c.verdict === "مؤكّد" ? "red" : c.verdict === "مشبوه جداً" ? "red" : "amber";
+    const detail = arNum(c.votes) + " أصوات · " +
+                   (c.nominees === 1 ? "كلها لـ " + c.top_name : arNum(c.nominees) + " مرشّحين") +
+                   " · خلال " + (c.span_seconds < 120
+                       ? arNum(c.span_seconds) + " ثانية"
+                       : arNum(Math.round(c.span_seconds / 60)) + " دقيقة") +
+                   " · " + arNum(c.browsers) + " متصفح";
+
+    const row = el("div", { class: "item", style: c.excluded ? "opacity:.55" : "" }, [
+      el("div", { class: "grow" }, [
+        el("b", { text: c.verdict + (c.excluded ? " — مستبعَد" : "") }),
+        el("span", { text: detail })
+      ]),
+      el("button", { class: c.excluded ? "btn ghost sm" : "btn danger sm",
+        text: c.excluded ? "أرجِعها" : "استبعدها",
+        onclick: async () => {
+          const r = await call("admin_exclude_cluster", {
+            p_match_id: d.id, p_ip_hash: c.ip_hash,
+            p_device_sig: c.device_sig, p_excluded: !c.excluded });
+          if (r && r.ok) {
+            toast(c.excluded ? "أُرجعت الأصوات" : "استُبعدت " + arNum(r.affected) + " أصوات");
+            render();
+          }
+        }})
+    ]);
+    body.appendChild(row);
+  });
 }
 
 /* ============ ألوان الفرق ============ */
